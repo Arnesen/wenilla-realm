@@ -34,7 +34,11 @@ jobs:
       - name: up
         run: docker compose up -d --wait --wait-timeout 900 mariadb db-init realm caddy
       - name: healthz through caddy
-        run: curl -fsk --retry 10 --retry-delay 3 https://localhost/healthz
+        run: |
+          curl -fsk --retry 10 --retry-delay 3 https://localhost/healthz | tee /tmp/h
+          grep -q '"mariadb":true' /tmp/h
+          grep -q '"client_data":false' /tmp/h   # CI mounts an empty Data/ on purpose
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/data/__index)" = 401
       - name: setup token printed
         run: docker compose logs realm | grep 'SETUP TOKEN'
       - name: setup gate and client lock
