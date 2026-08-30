@@ -58,6 +58,10 @@ for dist in "${SRC}"/*.conf.dist; do
       ;;
   esac
 done
-chmod 0640 "${DST}"/*.conf
-chown mangos:mangos "${DST}"/*.conf 2>/dev/null || true
+# Ownership: the realm service (uid 10002 in its own image) edits mangosd/aiplayerbot/ahbot
+# .conf in place (temp file + rename, so it needs write on the directory too); realmd/mangosd
+# (uid 10001, group mangos) only read. Owner realm, group mangos, no world access.
+chown 10002:mangos "${DST}" "${DST}"/*.conf 2>/dev/null || true
+chmod 0770 "${DST}"
+chmod 0660 "${DST}"/*.conf
 echo "==> conf-defaults done"
