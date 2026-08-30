@@ -43,8 +43,9 @@ for dist in "${SRC}"/*.conf.dist; do
       ;;
     aiplayerbot.conf)
       sed -i \
-        -e 's|^AiPlayerbot.MinRandomBots = .*|AiPlayerbot.MinRandomBots = 50|' \
-        -e 's|^AiPlayerbot.MaxRandomBots = .*|AiPlayerbot.MaxRandomBots = 50|' \
+        -e 's|^AiPlayerbot.Enabled = .*|AiPlayerbot.Enabled = 0|' \
+        -e 's|^AiPlayerbot.MinRandomBots = .*|AiPlayerbot.MinRandomBots = 0|' \
+        -e 's|^AiPlayerbot.MaxRandomBots = .*|AiPlayerbot.MaxRandomBots = 0|' \
         -e 's|^AiPlayerbot.RandomBotAccountCount = .*|AiPlayerbot.RandomBotAccountCount = 50|' \
         "${out}"
       # a playerbot DB key exists in some module versions; point it at the same server if so

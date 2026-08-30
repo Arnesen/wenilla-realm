@@ -70,7 +70,8 @@ services:
     command: ["mangosd", "-c", "/config/mangosd.conf", "-a", "/config/ahbot.conf", "-p", "/config/aiplayerbot.conf"]
     # mangosd saves every character on SIGTERM; never cut that short.
     stop_grace_period: 5m
-    mem_limit: 5g
+    # Hard cap for the world server. ~2 GB with bots off; each random bot adds ~20 MB.
+    mem_limit: ${MANGOSD_MEM:-3g}
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7878"]
       interval: 15s
@@ -81,6 +82,9 @@ services:
   realm:
     image: ghcr.io/arnesen/wenilla-realm:${REALM_TAG:-latest}
     restart: unless-stopped
+    # Share mangosd's PID namespace so the dashboard can read the world server's memory
+    # use from /proc (no docker socket needed). /proc/meminfo is the machine's either way.
+    pid: "service:mangosd"
     depends_on:
       mariadb:
         condition: service_healthy

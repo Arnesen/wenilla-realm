@@ -180,6 +180,15 @@ cmd_init() {
     if yesno "Generate movement maps during extract?" n; then mmaps=1; else mmaps=0; fi
   fi
 
+  # --- memory --------------------------------------------------------------------
+  local ram_mb mangosd_mem
+  ram_mb="$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+  if [ "${ram_mb}" -gt 0 ] && [ "${ram_mb}" -lt 6000 ]; then mangosd_mem="2500m"; else mangosd_mem="3g"; fi
+  say "" "This machine has ${ram_mb} MB of RAM. Random bots are OFF by default (each one costs ~20 MB in" \
+      "the world server; 50 bots ≈ 1 GB). The world server is capped at ${mangosd_mem}; the dashboard shows" \
+      "memory pressure, and you can raise the cap in .env (MANGOSD_MEM) on a bigger VM."
+  [ "${ram_mb}" -gt 0 ] && [ "${ram_mb}" -lt 3500 ] && say "  warning: under 4 GB is below what the world server needs; expect trouble."
+
   # --- write -------------------------------------------------------------------
   hr; say "Summary" "" "  domain        ${domain}" "  client data   ${client}" "  mmaps         $( [ "${mmaps}" = 1 ] && echo yes || echo 'no (later: realmctl extract --mmaps)')" ""
   [ "${YES}" = 1 ] || yesno "Write .env?" y || die "aborted; nothing written"
@@ -194,6 +203,7 @@ DB_REALMWEB_PASSWORD=${p_web}
 MANGOS_TAG=latest
 REALM_TAG=latest
 EXTRACT_MMAPS=${mmaps}
+MANGOSD_MEM=${mangosd_mem}
 ENV
   say ".env written (mode 600)." ""
   say "Next:" \
