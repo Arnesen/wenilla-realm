@@ -30,7 +30,11 @@ RUN git clone https://github.com/cmangos/classic-db classic-db \
     && rm -rf classic-db/.git
 
 # Mirrors the flags proven on the reference install (playerbots + ahbot + extractors).
+# FETCHCONTENT_SOURCE_DIR_PLAYERBOTS: the core's src/CMakeLists.txt declares PlayerBots as a
+# FetchContent with GIT_TAG "master" and would otherwise move the pinned checkout to master
+# at configure time (that is how the first CI builds ended up with an API mismatch).
 RUN cmake -S mangos-classic -B /opt/build \
+      -DFETCHCONTENT_SOURCE_DIR_PLAYERBOTS=/opt/src/mangos-classic/src/modules/PlayerBots \
       -DCMAKE_INSTALL_PREFIX=/opt/mangos \
       -DCMAKE_BUILD_TYPE=Release \
       -DBUILD_GAME_SERVER=ON -DBUILD_LOGIN_SERVER=ON \
