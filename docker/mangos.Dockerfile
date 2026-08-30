@@ -3,10 +3,12 @@
 # commits pinned in upstreams.env. Contains no game data.
 ARG MANGOS_CLASSIC_COMMIT
 ARG CLASSIC_DB_COMMIT
+ARG PLAYERBOTS_COMMIT
 
 FROM debian:bookworm AS build
 ARG MANGOS_CLASSIC_COMMIT
 ARG CLASSIC_DB_COMMIT
+ARG PLAYERBOTS_COMMIT
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git ca-certificates \
@@ -14,9 +16,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/src
+# PlayerBots is not a submodule of the core: it is a separate repo dropped into
+# src/modules/PlayerBots, and its API tracks the core closely — both pins move together
+# (a mismatch fails the build in playerbot/strategy/actions/*.cpp).
 RUN git clone --recursive https://github.com/cmangos/mangos-classic mangos-classic \
     && git -C mangos-classic checkout --recurse-submodules "${MANGOS_CLASSIC_COMMIT}" \
-    && git -C mangos-classic submodule update --init --recursive
+    && git -C mangos-classic submodule update --init --recursive \
+    && rm -rf mangos-classic/src/modules/PlayerBots \
+    && git clone https://github.com/cmangos/playerbots mangos-classic/src/modules/PlayerBots \
+    && git -C mangos-classic/src/modules/PlayerBots checkout "${PLAYERBOTS_COMMIT}"
 RUN git clone https://github.com/cmangos/classic-db classic-db \
     && git -C classic-db checkout "${CLASSIC_DB_COMMIT}" \
     && rm -rf classic-db/.git
@@ -37,6 +45,7 @@ RUN mkdir -p /opt/core && cp -r mangos-classic/sql /opt/core/sql \
 FROM debian:bookworm-slim
 ARG MANGOS_CLASSIC_COMMIT
 ARG CLASSIC_DB_COMMIT
+ARG PLAYERBOTS_COMMIT
 LABEL org.opencontainers.image.source="https://github.com/cmangos/mangos-classic" \
       org.opencontainers.image.revision="${MANGOS_CLASSIC_COMMIT}" \
       org.opencontainers.image.licenses="GPL-2.0-only" \

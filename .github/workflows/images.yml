@@ -44,6 +44,7 @@ jobs:
           build-args: |
             MANGOS_CLASSIC_COMMIT=${{ env.MANGOS_CLASSIC_COMMIT }}
             CLASSIC_DB_COMMIT=${{ env.CLASSIC_DB_COMMIT }}
+            PLAYERBOTS_COMMIT=${{ env.PLAYERBOTS_COMMIT }}
           cache-from: type=gha,scope=mangos
           cache-to: type=gha,scope=mangos,mode=max
   realm:
