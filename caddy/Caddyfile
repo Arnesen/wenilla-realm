@@ -1,0 +1,18 @@
+# The only service with published ports. Terminates HTTPS (WebGPU needs a secure
+# context) and forwards everything to the realm service, including WebSocket
+# upgrades for /ws/*. With REALM_DOMAIN=localhost Caddy uses its internal CA.
+{$REALM_DOMAIN:localhost} {
+	# Caddy's encode handler skips responses that already carry a
+	# Content-Encoding, so the precompressed .br/.gz wasm served by the realm
+	# service passes through untouched.
+	encode zstd gzip
+
+	reverse_proxy realm:8090
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

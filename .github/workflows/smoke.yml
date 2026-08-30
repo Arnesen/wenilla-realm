@@ -1,0 +1,43 @@
+name: smoke
+on:
+  workflow_run:
+    workflows: [images]
+    types: [completed]
+  workflow_dispatch:
+jobs:
+  smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: configure
+        run: |
+          cp .env.example .env
+          sed -i 's|^REALM_DOMAIN=.*|REALM_DOMAIN=localhost|; s|^CLIENT_DATA=.*|CLIENT_DATA=./ci/empty-data|' .env
+          for v in DB_ROOT_PASSWORD DB_MANGOS_PASSWORD DB_REALMWEB_PASSWORD; do
+            sed -i "s|^$v=.*|$v=$(openssl rand -hex 16)|" .env
+          done
+          sed -i "s|^MANGOS_TAG=.*|MANGOS_TAG=sha-${GITHUB_SHA::7}|; s|^REALM_TAG=.*|REALM_TAG=sha-${GITHUB_SHA::7}|" .env
+      - name: pull images
+        run: docker compose pull mariadb caddy realm db-init
+      # mangosd cannot load a world without dbc/maps (empty CLIENT_DATA), so only the
+      # web path is asserted here: db-init completes, realm is healthy, Caddy serves it.
+      - name: up
+        run: docker compose up -d --wait --wait-timeout 900 mariadb db-init realm caddy
+      - name: healthz through caddy
+        run: curl -fsk --retry 10 --retry-delay 3 https://localhost/healthz
+      - name: setup token printed
+        run: docker compose logs realm | grep 'SETUP TOKEN'
+      # TODO once the Rust side documents /setup form fields:
+      #   TOKEN=$(docker compose exec -T realm cat /state/setup-token)
+      #   curl -fsk -c jar https://localhost/setup -d "token=$TOKEN" -d "admin_user=admin" -d "admin_pass=$P" -d "realm_name=CI"
+      #   curl -fsk -b jar https://localhost/api/play   # expect 200 + play page
+      - name: logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: down
+        if: always()
+        run: docker compose down -v

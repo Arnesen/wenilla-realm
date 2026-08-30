@@ -1,0 +1,9 @@
+backups/
+data/
+.env
+.git/
+docs/
+ci/
+*.MPQ
+*.mpq
+*.dbc

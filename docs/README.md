@@ -1,0 +1,46 @@
+# wenilla-realm
+
+A private, 1.12.1-compatible realm that your friends play **from a browser tab**. One VM,
+one `docker compose up`: CMaNGOS `mangos-classic` + `classic-db` for the world, the
+[wenilla](https://github.com/Arnesen/wenilla) browser client (Rust → WebAssembly), and a small
+admin/relay service that renders the play page, proxies the game protocol over WebSockets, and
+gives the operator a setup wizard and control panel. Caddy terminates HTTPS. No game ports are
+ever published; nobody installs anything.
+
+*Not affiliated with or endorsed by Blizzard Entertainment.* This package contains no game
+data and downloads none: you supply the `Data/` folder of your own 1.12.1 client.
+
+## Quickstart
+
+1. **VM**: x86-64, 4 vCPU / 8 GB RAM / 40 GB disk (e.g. Hetzner CX33 or CPX32), Docker Engine
+   with Compose v2, ports 80/443 open. A domain with an A record pointing at it.
+2. **Client data**: copy your client's `Data/` folder to the VM (`rsync -a Data/ vm:/srv/client/Data/`).
+3. **Configure**: `git clone` this repo, `cp .env.example .env`, set `REALM_DOMAIN`,
+   `CLIENT_DATA`, and three passwords (`openssl rand -hex 24`).
+4. **Extract** the server's map data from your client once: `./realmctl extract` (add `--mmaps`
+   for pathing maps; hours of CPU) — or `./realmctl import-datapack <dir>` if you already have one.
+5. **Start**: `./realmctl up`. It prints a setup token; open `https://<your-domain>/setup`,
+   name the realm, create the admin login, then invite players from the panel.
+
+Full walkthrough: [SETUP.md](SETUP.md). Day two: [OPERATIONS.md](OPERATIONS.md).
+
+## What is inside
+
+| Component | Role | License |
+|---|---|---|
+| [CMaNGOS mangos-classic](https://github.com/cmangos/mangos-classic) | game server (`realmd`, `mangosd`, extractors, playerbots, auction bot) | GPLv2 |
+| [classic-db](https://github.com/cmangos/classic-db) | world database content | GPLv3 |
+| [wenilla](https://github.com/Arnesen/wenilla) | browser client (wasm) + `wenilla-realm` admin/relay service | MIT OR Apache-2.0 |
+| [Caddy](https://caddyserver.com), [MariaDB](https://mariadb.org) | HTTPS front, database | Apache-2.0, GPLv2 |
+| this repository | compose, Dockerfiles, scripts, docs | MIT |
+
+**Source offer (GPLv2 §3 / GPLv3 §6).** The published images build the upstream projects
+*unpatched* at the commits pinned in [`upstreams.env`](../upstreams.env). Every image carries
+`org.opencontainers.image.source` and `org.opencontainers.image.revision` labels (plus
+`dev.wenilla.classic-db.revision`); the exact sources are at those revisions in the upstream
+repositories, and the Dockerfiles in `docker/` are the complete build recipe.
+
+## Docs
+
+[SETUP](SETUP.md) · [OPERATIONS](OPERATIONS.md) · [SECURITY](SECURITY.md) · [PRIVACY](PRIVACY.md)
+· [LEGAL](LEGAL.md) · [EXTENSIONS](EXTENSIONS.md) · [DESIGN](DESIGN.md)

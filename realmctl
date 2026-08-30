@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# realmctl — operator CLI for wenilla-realm (wraps docker compose v2).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${ROOT}"
+# shellcheck disable=SC1091
+[ -f upstreams.env ] && set -a && . ./upstreams.env && set +a
+# shellcheck disable=SC1091
+[ -f .env ] && set -a && . ./.env && set +a
+
+dc() { docker compose "$@"; }
+die() { echo "realmctl: $*" >&2; exit 1; }
+need_env() { [ -f .env ] || die "no .env — cp .env.example .env and edit it"; }
+
+usage() {
+  cat <<'USAGE'
+usage: realmctl <command>
+  up                 start the stack, wait for the realm service, print the setup token
+  down               stop everything (mangosd saves characters first; up to 5 min)
+  status             compose ps + restart counts
+  logs [svc]         follow logs (all services by default)
+  extract [--mmaps]  extract dbc/maps/vmaps[/mmaps] from CLIENT_DATA into the gamedata volume
+  import-datapack D  copy an existing dbc/ maps/ vmaps/ [mmaps/] tree into the gamedata volume
+  backup             dump DBs + service state to backups/ (keeps 14)
+  restore FILE       restore a backups/realm-*.tar.gz (stops the game services first)
+  reset-admin        reset the web admin credentials
+  update             pull newer images and restart
+  install-cron       install a nightly backup crontab line
+USAGE
+}
+
+setup_token() {
+  local t
+  t="$(dc exec -T realm cat /state/setup-token 2>/dev/null || true)"
+  [ -n "${t}" ] || t="$(dc logs --no-color realm 2>/dev/null | sed -n 's/.*SETUP TOKEN: *\([A-Za-z0-9._-]*\).*/\1/p' | tail -1)"
+  if [ -n "${t}" ]; then
+    echo; echo "Setup: https://${REALM_DOMAIN:-localhost}/setup"; echo "Token: ${t}"
+  else
+    echo "(no setup token found — setup already completed, or run: realmctl logs realm)"
+  fi
+}
+
+wait_healthy() {
+  local svc="$1" secs="${2:-300}" cid st
+  for _ in $(seq 1 "${secs}"); do
+    cid="$(dc ps -q "${svc}" 2>/dev/null || true)"
+    st="$( [ -n "${cid}" ] && docker inspect -f '{{.State.Health.Status}}' "${cid}" 2>/dev/null || echo starting)"
+    [ "${st}" = "healthy" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+cmd_up() {
+  need_env
+  [ -n "${CLIENT_DATA:-}" ] && [ -d "${CLIENT_DATA}" ] || die "CLIENT_DATA (${CLIENT_DATA:-unset}) is not a directory"
+  ls "${CLIENT_DATA}"/*.[Mm][Pp][Qq] >/dev/null 2>&1 || ls "${CLIENT_DATA}"/*/*.[Mm][Pp][Qq] >/dev/null 2>&1 \
+    || die "no .MPQ files under ${CLIENT_DATA} — point it at your client's Data/ folder"
+  for v in DB_ROOT_PASSWORD DB_MANGOS_PASSWORD DB_REALMWEB_PASSWORD; do
+    [ "${!v:-change-me}" != "change-me" ] || die "set ${v} in .env (openssl rand -hex 24)"
+  done
+  if ! docker volume inspect "$(basename "${ROOT}")_gamedata" >/dev/null 2>&1; then
+    echo "note: gamedata volume is empty — run 'realmctl extract' or 'realmctl import-datapack' before mangosd can load the world"
+  fi
+  dc up -d
+  echo "waiting for the realm service..."
+  wait_healthy realm 300 || echo "realm service not healthy yet; check: realmctl logs realm"
+  setup_token
+  echo "mangosd loads the world in the background (several minutes): realmctl logs mangosd"
+}
+
+cmd_status() {
+  dc ps
+  echo; echo "restarts:"
+  for cid in $(dc ps -aq); do
+    docker inspect -f '  {{.Name}}  restarts={{.RestartCount}}  health={{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}' "${cid}"
+  done
+}
+
+cmd_extract() {
+  need_env
+  local mm=0; [ "${1:-}" = "--mmaps" ] && mm=1
+  EXTRACT_MMAPS="${mm}" dc --profile extract run --rm extract
+}
+
+cmd_import() {
+  local src="${1:?usage: realmctl import-datapack <dir with dbc/ maps/ vmaps/ [mmaps/]>}"
+  for d in dbc maps vmaps; do [ -d "${src}/${d}" ] || die "${src}/${d} missing"; done
+  local vol; vol="$(basename "${ROOT}")_gamedata"
+  docker volume create "${vol}" >/dev/null
+  echo "copying into volume ${vol}..."
+  tar -C "${src}" -cf - dbc maps vmaps $( [ -d "${src}/mmaps" ] && echo mmaps ) \
+    | docker run --rm -i -v "${vol}:/data" debian:bookworm-slim \
+        bash -c 'tar -C /data -xf - && date -u +%FT%TZ > /data/.extracted && chown -R 10001:10001 /data && du -sh /data'
+}
+
+cmd_backup() { need_env; mkdir -p backups; dc --profile backup run --rm backup; }
+
+cmd_restore() {
+  need_env
+  local f="${1:?usage: realmctl restore backups/realm-<stamp>.tar.gz}"
+  [ -f "${f}" ] || die "no such file: ${f}"
+  echo "stopping game services (characters are saved first)..."
+  dc stop realm mangosd realmd
+  dc --profile backup run --rm backup /opt/realm/restore.sh "/backups/$(basename "${f}")"
+  dc up -d
+}
+
+cmd_install_cron() {
+  local line="17 4 * * * ${ROOT}/realmctl backup >> ${ROOT}/backups/cron.log 2>&1"
+  echo "${line}"
+  if [ "${1:-}" = "--print" ]; then return; fi
+  ( crontab -l 2>/dev/null | grep -v 'realmctl backup' ; echo "${line}" ) | crontab -
+  echo "installed (crontab -l to verify)"
+}
+
+case "${1:-}" in
+  up)              cmd_up ;;
+  down)            dc down ;;
+  status)          cmd_status ;;
+  logs)            shift; dc logs -f --tail=200 "$@" ;;
+  extract)         shift; cmd_extract "$@" ;;
+  import-datapack) shift; cmd_import "$@" ;;
+  backup)          cmd_backup ;;
+  restore)         shift; cmd_restore "$@" ;;
+  reset-admin)     dc exec realm /app/wenilla-realm reset-admin ;;
+  update)          need_env; dc pull; dc up -d; cmd_status ;;
+  install-cron)    shift; cmd_install_cron "$@" ;;
+  ""|-h|--help|help) usage ;;
+  *)               usage; exit 1 ;;
+esac

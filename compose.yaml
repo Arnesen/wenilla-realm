@@ -1,0 +1,164 @@
+# wenilla-realm: a 1.12.1-compatible realm played from the browser.
+# Only `caddy` publishes ports. Game ports (3724/8085), SOAP (7878) and MariaDB
+# stay on the internal network; players reach the game through the realm
+# service's WebSocket relay behind HTTPS.
+
+x-mangos-image: &mangos-image ghcr.io/arnesen/wenilla-realm-mangos:${MANGOS_TAG:-latest}
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/mysql
+      - ./docker/mariadb-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  db-init:
+    image: *mangos-image
+    restart: "no"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      DB_MANGOS_PASSWORD: ${DB_MANGOS_PASSWORD:?set DB_MANGOS_PASSWORD in .env}
+      DB_REALMWEB_PASSWORD: ${DB_REALMWEB_PASSWORD:?set DB_REALMWEB_PASSWORD in .env}
+      REALM_DOMAIN: ${REALM_DOMAIN:-localhost}
+    volumes:
+      - config:/config
+    command: ["bash", "-c", "/opt/realm/db-init.sh && /opt/realm/conf-defaults.sh"]
+
+  realmd:
+    image: *mangos-image
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    user: mangos
+    volumes:
+      - config:/config
+      - mangoslogs:/logs
+    command: ["realmd", "-c", "/config/realmd.conf"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/3724"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  mangosd:
+    image: *mangos-image
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    user: mangos
+    volumes:
+      - config:/config
+      - gamedata:/data:ro
+      - mangoslogs:/logs
+    # anticheat.conf has no CLI flag: mangosd loads ../etc/anticheat.conf relative
+    # to its cwd, which the image symlinks to /config/anticheat.conf.
+    command: ["mangosd", "-c", "/config/mangosd.conf", "-a", "/config/ahbot.conf", "-p", "/config/aiplayerbot.conf"]
+    # mangosd saves every character on SIGTERM; never cut that short.
+    stop_grace_period: 5m
+    mem_limit: 5g
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/7878"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
+
+  realm:
+    image: ghcr.io/arnesen/wenilla-realm:${REALM_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      REALM_PUBLIC_URL: https://${REALM_DOMAIN:-localhost}
+      REALM_BIND: 0.0.0.0:8090
+      REALM_STATE_DIR: /state
+      REALM_WWW: /app/www
+      CLIENT_DATA: /client/Data
+      CONFIG_DIR: /config
+      MARIADB_URL: mysql://realmweb:${DB_REALMWEB_PASSWORD:?}@mariadb:3306/classicrealmd
+      SOAP_URL: http://mangosd:7878/
+      REALMD_HOST: realmd
+      MANGOSD_HOST: mangosd
+      WENILLA_DEV_QUERY_CREDS: "0"
+      RUST_LOG: info
+    volumes:
+      - state:/state
+      - config:/config
+      - ${CLIENT_DATA:?set CLIENT_DATA in .env}:/client/Data:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - realm
+    environment:
+      REALM_DOMAIN: ${REALM_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # --- on-demand jobs (profiles) -------------------------------------------
+
+  # realmctl extract: dbc/maps/vmaps (+mmaps) from the operator's own client.
+  extract:
+    image: *mangos-image
+    profiles: ["extract"]
+    restart: "no"
+    environment:
+      EXTRACT_MMAPS: ${EXTRACT_MMAPS:-0}
+    volumes:
+      - ${CLIENT_DATA:?}:/client/Data:ro
+      - gamedata:/data
+    command: ["/opt/realm/extract.sh"]
+
+  # realmctl backup / restore
+  backup:
+    image: mariadb:11.4
+    profiles: ["backup"]
+    restart: "no"
+    environment:
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+    volumes:
+      - ./docker/backup.sh:/opt/realm/backup.sh:ro
+      - ./docker/restore.sh:/opt/realm/restore.sh:ro
+      - state:/state
+      - ./backups:/backups
+    command: ["/opt/realm/backup.sh"]
+
+volumes:
+  db:
+  config:
+  gamedata:
+  state:
+  mangoslogs:
+  caddy_data:
+  caddy_config:
