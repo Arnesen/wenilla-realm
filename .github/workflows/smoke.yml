@@ -38,7 +38,6 @@ jobs:
           curl -fsk --retry 10 --retry-delay 3 https://localhost/healthz | tee /tmp/h
           grep -q '"mariadb":true' /tmp/h
           grep -q '"client_data":false' /tmp/h   # CI mounts an empty Data/ on purpose
-          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/data/__index)" = 401
       - name: setup token printed
         run: docker compose logs realm | grep 'SETUP TOKEN'
       - name: setup gate and client lock
@@ -47,9 +46,10 @@ jobs:
           # everything redirects to the wizard until setup is complete
           test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/admin)" = "303 https://localhost/setup"
           curl -fsk https://localhost/setup | grep -q 'name="token"'
-          # game routes are locked without a session (401, no-store) — before and after setup
-          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/data/__index)" = 401
-          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/wenilla.js)" = 401
+          # until setup is complete the gate sends even the game routes to the wizard (nothing is
+          # served); after setup they answer 401 without a session — covered by tests/app.rs
+          test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/data/__index)" = "303 https://localhost/setup"
+          test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/wenilla.js)" = "303 https://localhost/setup"
           # a wrong token is refused
           curl -sk https://localhost/setup -d token=wrong -d admin_username=ci -d admin_password=cipassword123 -d admin_password2=cipassword123 -d realm_name=CI | grep -q 'wrong setup token'
       # The wizard's final step talks to mangosd's console (bootstrapping WRSOAP), and mangosd
