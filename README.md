@@ -15,12 +15,19 @@ data and downloads none: you supply the `Data/` folder of your own 1.12.1 client
 1. **VM**: x86-64, 4 vCPU / 8 GB RAM / 40 GB disk (e.g. Hetzner CX33 or CPX32), Docker Engine
    with Compose v2, ports 80/443 open. A domain with an A record pointing at it.
 2. **Client data**: copy your client's `Data/` folder to the VM (`rsync -a Data/ vm:/srv/client/Data/`).
-3. **Configure**: `git clone` this repo, `cp .env.example .env`, set `REALM_DOMAIN`,
-   `CLIENT_DATA`, and three passwords (`openssl rand -hex 24`).
-4. **Extract** the server's map data from your client once: `./realmctl extract` (add `--mmaps`
-   for pathing maps; hours of CPU) — or `./realmctl import-datapack <dir>` if you already have one.
-5. **Start**: `./realmctl up`. It prints a setup token; open `https://<your-domain>/setup`,
-   name the realm, create the admin login, then invite players from the panel.
+3. **Configure**: `git clone https://github.com/Arnesen/wenilla-realm && cd wenilla-realm`,
+   then `./realmctl init` — a guided walk through the four things only you know (hostname,
+   where your client's `Data/` is, whether to build movement maps) that explains each choice
+   and its limits, generates the database passwords, and writes `.env`.
+4. **Extract** the server's map data from your client once: `./realmctl extract` — or
+   `./realmctl import-datapack <dir>` if you already have a `dbc/ maps/ vmaps/` tree.
+5. **Start**: `./realmctl up`. It pulls the prebuilt images from `ghcr.io/arnesen/…` and
+   prints a one-time setup token; open `https://<your-domain>/setup`, paste it, name the
+   realm, create your admin login, then invite players from the panel (Users → Invite a friend).
+
+Everything is on one machine and there is exactly one game world per install. The operator
+creates every account; players need a WebGPU-capable browser (Chrome/Edge — Linux Chrome behind
+`chrome://flags/#enable-unsafe-webgpu`) and nothing else.
 
 Full walkthrough: [SETUP.md](docs/SETUP.md). Day two: [OPERATIONS.md](docs/OPERATIONS.md).
 

@@ -12,17 +12,23 @@ Install Docker Engine + the Compose plugin (`docker compose version` must work).
 4 vCPU / 8 GB is comfortable for a dozen players and 50 bots; `mangosd` is capped at 5 GB
 (`mem_limit`) and is single-threaded per continent, so a faster core beats more cores.
 
-## 2. `.env`
+## 2. `.env` — `realmctl init`
 
 ```bash
 git clone https://github.com/Arnesen/wenilla-realm && cd wenilla-realm
-cp .env.example .env
-$EDITOR .env      # REALM_DOMAIN, CLIENT_DATA, three passwords
+./realmctl init
 ```
 
-Passwords: `openssl rand -hex 24`. They are written into `mangosd.conf`/`realmd.conf` on
-first boot and into MariaDB grants on every boot, so changing them later in `.env` is enough
-for the DB users but you must also edit the `.conf` files (`docker compose exec mangosd`).
+The wizard asks for the hostname (checks that it resolves; `localhost` for a laptop trial),
+the path to your client's `Data/` (checks it holds the archives), and whether to build
+movement maps; it generates the three database passwords itself and writes `.env` (mode 600).
+Re-run it any time — it keeps the old file as `.env.bak`. For scripts:
+`./realmctl init --domain realm.example.com --client-data /srv/client/Data --mmaps 0 --yes`.
+
+If you prefer to write `.env` by hand, `.env.example` documents every key. The passwords are
+written into `mangosd.conf`/`realmd.conf` on first boot and into MariaDB grants on every boot,
+so changing them later in `.env` is enough for the DB users but you must also edit the `.conf`
+files (`docker compose exec mangosd`).
 
 ## 3. Your client's `Data/` folder
 

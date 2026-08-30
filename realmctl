@@ -10,11 +10,13 @@ cd "${ROOT}"
 
 dc() { docker compose "$@"; }
 die() { echo "realmctl: $*" >&2; exit 1; }
-need_env() { [ -f .env ] || die "no .env — cp .env.example .env and edit it"; }
+need_env() { [ -f .env ] || die "no .env — run ./realmctl init"; }
 
 usage() {
   cat <<'USAGE'
 usage: realmctl <command>
+  init               guided first-time configuration: writes .env, explains each choice
+                     (flags for scripting: --domain D --client-data DIR --mmaps 0|1 --yes)
   up                 start the stack, wait for the realm service, print the setup token
   down               stop everything (mangosd saves characters first; up to 5 min)
   status             compose ps + restart counts
@@ -62,11 +64,144 @@ cmd_up() {
   if ! docker volume inspect "$(basename "${ROOT}")_gamedata" >/dev/null 2>&1; then
     echo "note: gamedata volume is empty — run 'realmctl extract' or 'realmctl import-datapack' before mangosd can load the world"
   fi
+  if ! dc pull --quiet 2>/dev/null; then
+    echo "note: image pull failed — no network, or the packages are private (then: docker login ghcr.io with a token that has read:packages). Trying with local images."
+  fi
   dc up -d
   echo "waiting for the realm service..."
   wait_healthy realm 300 || echo "realm service not healthy yet; check: realmctl logs realm"
   setup_token
   echo "mangosd loads the world in the background (several minutes): realmctl logs mangosd"
+}
+
+# ---------------------------------------------------------------------------
+# init — the guided configuration. Asks the few things only the operator knows,
+# checks what it can, explains the limits where they matter, and writes .env.
+# ---------------------------------------------------------------------------
+ask() { # ask VAR "prompt" "default"
+  local var="$1" prompt="$2" def="${3:-}" ans
+  if [ "${YES}" = 1 ]; then printf -v "${var}" '%s' "${def}"; return; fi
+  if [ -n "${def}" ]; then read -r -p "${prompt} [${def}]: " ans; else read -r -p "${prompt}: " ans; fi
+  printf -v "${var}" '%s' "${ans:-${def}}"
+}
+yesno() { # yesno "question" default(y|n)
+  local def="${2:-n}" ans
+  if [ "${YES}" = 1 ]; then [ "${def}" = y ]; return; fi
+  read -r -p "$1 [$( [ "${def}" = y ] && echo Y/n || echo y/N )]: " ans
+  ans="${ans:-${def}}"; [[ "${ans}" =~ ^[Yy] ]]
+}
+rand_hex() { openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+hr() { printf '\n\033[2m%s\033[0m\n' "────────────────────────────────────────────────────────────────"; }
+say() { printf '%s\n' "$@"; }
+
+cmd_init() {
+  local YES=0 domain="" client="" mmaps="" force=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --domain) domain="$2"; shift 2 ;;
+      --client-data) client="$2"; shift 2 ;;
+      --mmaps) mmaps="$2"; shift 2 ;;
+      --yes) YES=1; shift ;;
+      --force) force=1; shift ;;
+      *) die "init: unknown flag $1" ;;
+    esac
+  done
+  # Writing .env needs no docker; 'up' does. Warn now so it is not a surprise later.
+  if ! command -v docker >/dev/null; then say "warning: docker is not installed — 'realmctl up' needs Docker Engine + the compose plugin (https://docs.docker.com/engine/install/)"
+  elif ! docker compose version >/dev/null 2>&1; then say "warning: 'docker compose version' fails — install the compose plugin before 'realmctl up'"; fi
+
+  if [ -f .env ] && [ "${force}" = 0 ]; then
+    say ".env already exists."
+    yesno "Replace it? (the old one is kept as .env.bak)" n || { say "keeping .env — run ./realmctl up"; return 0; }
+    cp .env .env.bak
+  fi
+
+  hr
+  say "wenilla-realm — first-time setup" ""
+  say "What you are setting up: ONE game world, played only from a browser, for a closed group." \
+      "You will be the admin; you create every player account by hand (no self-registration)." \
+      "Only ports 80/443 are ever exposed. The game data comes from a 1.12.1 client YOU own —" \
+      "this package contains none and downloads none, and the archives never leave this machine." \
+      "" \
+      "Limits to know now: one world per install · WebGPU browsers only (Chrome/Edge; Linux Chrome" \
+      "needs chrome://flags/#enable-unsafe-webgpu) · no phones · Discord sign-in is not in this" \
+      "version · keep it unlisted and non-commercial (docs/LEGAL.md)."
+  [ "${YES}" = 1 ] || { read -r -p "Enter to continue, Ctrl-C to stop: " _; }
+
+  # --- 1. domain -------------------------------------------------------------
+  hr; say "1/4  Address" ""
+  say "The hostname players will open. HTTPS is mandatory (the browser exposes WebGPU only on a" \
+      "secure origin), so Caddy fetches a Let's Encrypt certificate for this name at first start —" \
+      "the DNS A record must already point at this machine and ports 80/443 must be reachable." \
+      "For a trial on this laptop answer 'localhost' (self-signed; the browser warns once)."
+  while :; do
+    [ -n "${domain}" ] || ask domain "Hostname" "localhost"
+    domain="${domain#https://}"; domain="${domain%%/*}"
+    if [ "${domain}" = "localhost" ]; then say "  trial mode: https://localhost with Caddy's internal CA"; break; fi
+    if [[ ! "${domain}" =~ ^[a-z0-9.-]+\.[a-z]{2,}$ ]]; then say "  that does not look like a hostname"; domain=""; [ "${YES}" = 1 ] && die "bad --domain"; continue; fi
+    local ip; ip="$( (getent ahostsv4 "${domain}" 2>/dev/null || true) | awk 'NR==1{print $1}')"
+    if [ -n "${ip}" ]; then say "  ${domain} resolves to ${ip}"; else say "  warning: ${domain} does not resolve yet — Caddy cannot get a certificate until it does"; fi
+    break
+  done
+
+  # --- 2. client data --------------------------------------------------------
+  hr; say "2/4  Your client's Data folder" ""
+  say "The Data/ directory of a 1.12.1 (build 5875) client, on this machine. It is mounted" \
+      "read-only: the extractor reads it once to derive maps, and the realm service serves" \
+      "single files out of the archives to your players' browsers." \
+      "Not here yet?  rsync -a \"/path/to/client/Data/\" $(hostname):/srv/client/Data/"
+  while :; do
+    [ -n "${client}" ] || ask client "Path to Data/" "/srv/client/Data"
+    client="${client%/}"
+    if [ ! -d "${client}" ]; then say "  no such directory: ${client}"; [ "${YES}" = 1 ] && die "bad --client-data"; client=""; continue; fi
+    local n; n="$(find "${client}" -maxdepth 2 -iname '*.mpq' 2>/dev/null | wc -l)"
+    if [ "${n}" = 0 ]; then say "  no .MPQ archives found under ${client} — is this the Data folder?"; [ "${YES}" = 1 ] && die "no MPQs"; client=""; continue; fi
+    say "  found ${n} archives ($(du -sh "${client}" 2>/dev/null | cut -f1))"
+    [ -e "${client}/dbc.MPQ" ] || [ -e "${client}/enUS/patch.MPQ" ] || [ -e "${client}/patch.MPQ" ] || say "  note: no dbc.MPQ/patch.MPQ at the usual places — the extractor will tell if this is not a 5875 client"
+    break
+  done
+
+  # --- 3. passwords -----------------------------------------------------------
+  hr; say "3/4  Database passwords" ""
+  local p_root p_mangos p_web; p_root="$(rand_hex)"; p_mangos="$(rand_hex)"; p_web="$(rand_hex)"
+  say "Three MariaDB accounts get random passwords now (root for installs and backups; 'mangos'" \
+      "for the game servers; 'realmweb', read-only, for the admin service). The database is never" \
+      "reachable from outside the compose network — this is defence in depth, and it costs nothing." \
+      "They are stored in .env (mode 600); you never type them."
+
+  # --- 4. map data --------------------------------------------------------------
+  hr; say "4/4  Server map data" ""
+  say "The game server needs dbc/, maps/ and vmaps/ derived from your client (about 15 minutes," \
+      "run once with './realmctl extract'). Movement maps (mmaps) make NPCs and bots path" \
+      "properly but take HOURS of CPU on a small VM; you can add them later with" \
+      "'./realmctl extract --mmaps'. If you already have such a tree from another install," \
+      "'./realmctl import-datapack <dir>' copies it in instead."
+  if [ -z "${mmaps}" ]; then
+    if yesno "Generate movement maps during extract?" n; then mmaps=1; else mmaps=0; fi
+  fi
+
+  # --- write -------------------------------------------------------------------
+  hr; say "Summary" "" "  domain        ${domain}" "  client data   ${client}" "  mmaps         $( [ "${mmaps}" = 1 ] && echo yes || echo 'no (later: realmctl extract --mmaps)')" ""
+  [ "${YES}" = 1 ] || yesno "Write .env?" y || die "aborted; nothing written"
+  umask 077
+  cat > .env <<ENV
+# Written by 'realmctl init' on $(date -u +%FT%TZ). Never commit this file.
+REALM_DOMAIN=${domain}
+CLIENT_DATA=${client}
+DB_ROOT_PASSWORD=${p_root}
+DB_MANGOS_PASSWORD=${p_mangos}
+DB_REALMWEB_PASSWORD=${p_web}
+MANGOS_TAG=latest
+REALM_TAG=latest
+EXTRACT_MMAPS=${mmaps}
+ENV
+  say ".env written (mode 600)." ""
+  say "Next:" \
+      "  ./realmctl extract        # derive the server's map data from your client (once)" \
+      "  ./realmctl up             # start everything; prints the one-time SETUP TOKEN" \
+      "  https://${domain}/setup   # paste the token, name the realm, create your admin login" \
+      "Then Users → 'Invite a friend', and send them https://${domain}/." ""
+  say "Not automated: the DNS record, copying your client to this machine, and reading docs/LEGAL.md."
 }
 
 cmd_status() {
@@ -115,6 +250,7 @@ cmd_install_cron() {
 }
 
 case "${1:-}" in
+  init)            shift; cmd_init "$@" ;;
   up)              cmd_up ;;
   down)            dc down ;;
   status)          cmd_status ;;
