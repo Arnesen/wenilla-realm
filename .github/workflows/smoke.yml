@@ -9,8 +9,14 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # A workflow_run event's GITHUB_SHA is the default branch head, which may be newer than
+    # the commit the images run actually built — always use that run's head_sha.
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - name: configure
@@ -20,7 +26,7 @@ jobs:
           for v in DB_ROOT_PASSWORD DB_MANGOS_PASSWORD DB_REALMWEB_PASSWORD; do
             sed -i "s|^$v=.*|$v=$(openssl rand -hex 16)|" .env
           done
-          sed -i "s|^MANGOS_TAG=.*|MANGOS_TAG=sha-${GITHUB_SHA::7}|; s|^REALM_TAG=.*|REALM_TAG=sha-${GITHUB_SHA::7}|" .env
+          sed -i "s|^MANGOS_TAG=.*|MANGOS_TAG=sha-${SHA::7}|; s|^REALM_TAG=.*|REALM_TAG=sha-${SHA::7}|" .env
       - name: pull images
         run: docker compose pull mariadb caddy realm db-init
       # mangosd cannot load a world without dbc/maps (empty CLIENT_DATA), so only the
@@ -31,10 +37,20 @@ jobs:
         run: curl -fsk --retry 10 --retry-delay 3 https://localhost/healthz
       - name: setup token printed
         run: docker compose logs realm | grep 'SETUP TOKEN'
-      # TODO once the Rust side documents /setup form fields:
-      #   TOKEN=$(docker compose exec -T realm cat /state/setup-token)
-      #   curl -fsk -c jar https://localhost/setup -d "token=$TOKEN" -d "admin_user=admin" -d "admin_pass=$P" -d "realm_name=CI"
-      #   curl -fsk -b jar https://localhost/api/play   # expect 200 + play page
+      - name: setup gate and client lock
+        run: |
+          set -x
+          # everything redirects to the wizard until setup is complete
+          test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/admin)" = "303 https://localhost/setup"
+          curl -fsk https://localhost/setup | grep -q 'name="token"'
+          # game routes are locked without a session (401, no-store) — before and after setup
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/data/__index)" = 401
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/wenilla.js)" = 401
+          # a wrong token is refused
+          curl -sk https://localhost/setup -d token=wrong -d admin_username=ci -d admin_password=cipassword123 -d admin_password2=cipassword123 -d realm_name=CI | grep -q 'wrong setup token'
+      # The wizard's final step talks to mangosd's console (bootstrapping WRSOAP), and mangosd
+      # cannot load a world here (no client data), so completing setup, login and /api/play
+      # stay covered by `cargo test -p wenilla-realm` in the wenilla repo (tests/app.rs).
       - name: logs on failure
         if: failure()
         run: docker compose logs
