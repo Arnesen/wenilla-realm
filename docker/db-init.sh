@@ -46,6 +46,11 @@ DEV_UPDATES="NO"
 AHBOT="YES"
 PLAYERBOTS_DB="YES"
 CFG
+  # InstallFullDB.sh creates the databases as root but applies the SQL as MYSQL_USERNAME with
+  # MYSQL_PASSWORD from the config; the entrypoint pre-created 'mangos' with a placeholder
+  # password, so set the real one BEFORE the install (seen in CI: "Access denied for user
+  # 'mangos'" on the very first mangos.sql).
+  root -e "CREATE USER IF NOT EXISTS 'mangos'@'%' IDENTIFIED BY '${DB_MANGOS_PASSWORD}'; ALTER USER 'mangos'@'%' IDENTIFIED BY '${DB_MANGOS_PASSWORD}'; GRANT ALL ON \`classic%\`.* TO 'mangos'@'%'; FLUSH PRIVILEGES;"
   ( cd "${CLASSICDB}" && bash InstallFullDB.sh -InstallAll root "${DB_ROOT_PASSWORD}" DeleteAll )
   rm -f "${CLASSICDB}/InstallFullDB.config"
 fi
