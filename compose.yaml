@@ -82,9 +82,9 @@ services:
   realm:
     image: ghcr.io/arnesen/wenilla-realm:${REALM_TAG:-latest}
     restart: unless-stopped
-    # Share mangosd's PID namespace so the dashboard can read the world server's memory
-    # use from /proc (no docker socket needed). /proc/meminfo is the machine's either way.
-    pid: "service:mangosd"
+    # No PID-namespace sharing with mangosd: it would make this container unable to start
+    # while mangosd restarts. /proc/meminfo inside is the machine's, which is what the
+    # dashboard's memory card reads.
     depends_on:
       mariadb:
         condition: service_healthy
