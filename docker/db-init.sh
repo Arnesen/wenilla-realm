@@ -51,6 +51,11 @@ CFG
   # password, so set the real one BEFORE the install (seen in CI: "Access denied for user
   # 'mangos'" on the very first mangos.sql).
   root -e "CREATE USER IF NOT EXISTS 'mangos'@'%' IDENTIFIED BY '${DB_MANGOS_PASSWORD}'; ALTER USER 'mangos'@'%' IDENTIFIED BY '${DB_MANGOS_PASSWORD}'; GRANT ALL ON \`classic%\`.* TO 'mangos'@'%'; FLUSH PRIVILEGES;"
+  if MYSQL_PWD="${DB_MANGOS_PASSWORD}" mariadb -h"${DB_HOST}" -umangos -N -e "SELECT 'mangos login ok'" ; then :; else
+    echo "!! the mangos user cannot log in with DB_MANGOS_PASSWORD — users on the server:"
+    root -e "SELECT user, host, plugin FROM mysql.user"
+    exit 1
+  fi
   ( cd "${CLASSICDB}" && bash InstallFullDB.sh -InstallAll root "${DB_ROOT_PASSWORD}" DeleteAll )
   rm -f "${CLASSICDB}/InstallFullDB.config"
 fi
