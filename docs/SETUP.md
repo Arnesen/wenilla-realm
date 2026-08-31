@@ -42,23 +42,34 @@ Point `CLIENT_DATA=/srv/client/Data` at it. It is mounted read-only into two con
 the extractor (once) and the realm service (which serves single files from the archives to
 browsers on demand; the archives themselves never leave the VM).
 
-## 4. Server map data: extract or import
+## 4. Server map data: extract or import — movement maps are REQUIRED
 
-`mangosd` needs `dbc/`, `maps/`, `vmaps/` (and ideally `mmaps/`) derived from the client.
+`mangosd` needs `dbc/`, `maps/`, `vmaps/` **and `mmaps/`** derived from the client. Without
+movement maps the world server does not start (it holds with a clear log message instead).
 
-- `./realmctl extract` — dbc/maps/vmaps, ~10–20 min. `./realmctl extract --mmaps` also
-  generates movement maps: hours on 4 vCPU, but NPCs and bots path properly. You can start
-  without mmaps and rerun with `--mmaps` later (remove the marker: `docker compose run --rm
-  extract rm /data/.extracted` first).
-- `./realmctl import-datapack /path/to/pack` — if you already have a `dbc/ maps/ vmaps/
-  [mmaps/]` tree from another install, copy it in instead (extraction is deterministic).
+- `./realmctl extract` — generates everything. dbc/maps/vmaps take ~20 minutes; the movement
+  maps add **hours** on a small VM (overnight is fine; rerun-safe).
+- `./realmctl import-datapack /path/to/pack` — if you have a `dbc/ maps/ vmaps/ mmaps/` tree
+  from another install or a beefier machine, copy it in instead (extraction is deterministic;
+  any subset works, e.g. mmaps only). From another machine, over SSH:
+
+  ```bash
+  tar -C /path/to/pack -cf - mmaps | ssh vm 'docker run --rm -i \
+    -v wenilla-realm_gamedata:/data debian:bookworm-slim \
+    bash -c "tar -C /data -xf - && chown -R 10001:10001 /data/mmaps"'
+  ssh vm 'cd wenilla-realm && docker compose restart mangosd'
+  ```
 
 If extraction stops with a locale error, your client stores archives in `Data/enUS/` style
 and the extractor wants them there; merged single-folder clients also work. See
 `docker/extract.sh`.
 
-Without movement maps the server still runs — a start guard sets `mmap.enabled = 0` and NPCs
-path crudely; add mmaps later and the same guard re-enables pathfinding on the next restart.
+### Images
+
+`realmctl up` pulls prebuilt images from `ghcr.io/arnesen/wenilla-realm{,-mangos}` — public,
+no login needed. If a fork publishes its own images from a private repo, note that GHCR
+package visibility is separate from repo visibility: make the two packages public (package
+settings → Change visibility) or `docker login ghcr.io` on the VM with a `read:packages` token.
 
 ## 5. First boot
 

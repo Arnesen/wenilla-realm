@@ -61,8 +61,14 @@ cmd_up() {
   for v in DB_ROOT_PASSWORD DB_MANGOS_PASSWORD DB_REALMWEB_PASSWORD; do
     [ "${!v:-change-me}" != "change-me" ] || die "set ${v} in .env (openssl rand -hex 24)"
   done
-  if ! docker volume inspect "$(basename "${ROOT}")_gamedata" >/dev/null 2>&1; then
-    echo "note: gamedata volume is empty — run 'realmctl extract' or 'realmctl import-datapack' before mangosd can load the world"
+  local vol; vol="$(basename "${ROOT}")_gamedata"
+  if ! docker volume inspect "${vol}" >/dev/null 2>&1; then
+    echo "note: no game data yet — the world server will WAIT until you run 'realmctl extract'"
+    echo "      or 'realmctl import-datapack' (movement maps included; the server requires them)."
+  elif ! docker run --rm -v "${vol}:/data" debian:bookworm-slim bash -c 'ls /data/mmaps/*.mmap >/dev/null 2>&1'; then
+    echo "note: game data has NO movement maps (mmaps) — the world server requires them and will"
+    echo "      wait. Generate: 'realmctl extract' (hours on a small VM) or copy from a machine"
+    echo "      that has them: 'realmctl import-datapack <dir>' — then 'docker compose restart mangosd'."
   fi
   if ! dc pull --quiet 2>/dev/null; then
     echo "note: image pull failed — no network, or the packages are private (then: docker login ghcr.io with a token that has read:packages). Trying with local images."
@@ -71,7 +77,10 @@ cmd_up() {
   echo "waiting for the realm service..."
   wait_healthy realm 300 || echo "realm service not healthy yet; check: realmctl logs realm"
   setup_token
-  echo "mangosd loads the world in the background (several minutes): realmctl logs mangosd"
+  echo
+  echo "The world server loads for several minutes on first boot: watch 'realmctl status' and"
+  echo "finish the /setup wizard AFTER mangosd shows healthy (its final step talks to the world"
+  echo "server and will ask you to retry if you are early)."
 }
 
 # ---------------------------------------------------------------------------
@@ -171,13 +180,15 @@ cmd_init() {
 
   # --- 4. map data --------------------------------------------------------------
   hr; say "4/4  Server map data" ""
-  say "The game server needs dbc/, maps/ and vmaps/ derived from your client (about 15 minutes," \
-      "run once with './realmctl extract'). Movement maps (mmaps) make NPCs and bots path" \
-      "properly but take HOURS of CPU on a small VM; you can add them later with" \
-      "'./realmctl extract --mmaps'. If you already have such a tree from another install," \
-      "'./realmctl import-datapack <dir>' copies it in instead."
+  say "The game server needs dbc/, maps/, vmaps/ AND movement maps (mmaps/) derived from your" \
+      "client — ALL of them are required; the server will not start without movement maps." \
+      "Two ways to get them, once:" \
+      "  a) generate here: './realmctl extract' — dbc/maps/vmaps take ~20 min, movement maps" \
+      "     add HOURS on a small VM (fine to leave running overnight)" \
+      "  b) generate or reuse them on a beefier machine and copy the tree in:" \
+      "     './realmctl import-datapack <dir with dbc/ maps/ vmaps/ mmaps/>'"
   if [ -z "${mmaps}" ]; then
-    if yesno "Generate movement maps during extract?" n; then mmaps=1; else mmaps=0; fi
+    if yesno "Will you generate everything on THIS machine with 'realmctl extract'?" y; then mmaps=1; else mmaps=0; say "  ok — extract here would skip mmaps ('extract --no-mmaps'); plan to import the full tree."; fi
   fi
 
   # --- memory --------------------------------------------------------------------
@@ -190,7 +201,7 @@ cmd_init() {
   [ "${ram_mb}" -gt 0 ] && [ "${ram_mb}" -lt 3500 ] && say "  warning: under 4 GB is below what the world server needs; expect trouble."
 
   # --- write -------------------------------------------------------------------
-  hr; say "Summary" "" "  domain        ${domain}" "  client data   ${client}" "  mmaps         $( [ "${mmaps}" = 1 ] && echo yes || echo 'no (later: realmctl extract --mmaps)')" ""
+  hr; say "Summary" "" "  domain        ${domain}" "  client data   ${client}" "  map data      $( [ "${mmaps}" = 1 ] && echo 'generate here (incl. mmaps)' || echo 'import from another machine')" ""
   [ "${YES}" = 1 ] || yesno "Write .env?" y || die "aborted; nothing written"
   umask 077
   cat > .env <<ENV
@@ -206,9 +217,12 @@ EXTRACT_MMAPS=${mmaps}
 MANGOSD_MEM=${mangosd_mem}
 ENV
   say ".env written (mode 600)." ""
+  local step1="  ./realmctl extract        # derive ALL the server's map data (once; mmaps take hours)"
+  [ "${mmaps}" = 1 ] || step1="  ./realmctl import-datapack <dir>   # copy dbc/ maps/ vmaps/ mmaps/ from your other machine"
   say "Next:" \
-      "  ./realmctl extract        # derive the server's map data from your client (once)" \
-      "  ./realmctl up             # start everything; prints the one-time SETUP TOKEN" \
+      "${step1}" \
+      "  ./realmctl up             # start everything; prints the SETUP TOKEN" \
+      "  ./realmctl status         # wait here until mangosd is healthy (first load: minutes)" \
       "  https://${domain}/setup   # paste the token, name the realm, create your admin login" \
       "Then Users → 'Invite a friend', and send them https://${domain}/." ""
   say "Not automated: the DNS record, copying your client to this machine, and reading docs/LEGAL.md."
@@ -224,19 +238,29 @@ cmd_status() {
 
 cmd_extract() {
   need_env
-  local mm=0; [ "${1:-}" = "--mmaps" ] && mm=1
+  # Movement maps are REQUIRED by the world server (it will not start without them), so the
+  # default is to generate them — hours of CPU on a small VM. --no-mmaps skips them for a
+  # split workflow (generate elsewhere, then import-datapack).
+  local mm=1
+  case "${1:-}" in
+    --no-mmaps) mm=0 ;;
+    --mmaps|"") ;;
+    *) die "extract: unknown flag ${1}" ;;
+  esac
   EXTRACT_MMAPS="${mm}" dc --profile extract run --rm extract
 }
 
 cmd_import() {
-  local src="${1:?usage: realmctl import-datapack <dir with dbc/ maps/ vmaps/ [mmaps/]>}"
-  for d in dbc maps vmaps; do [ -d "${src}/${d}" ] || die "${src}/${d} missing"; done
+  local src="${1:?usage: realmctl import-datapack <dir with any of dbc/ maps/ vmaps/ mmaps/>}"
+  local have=()
+  for d in dbc maps vmaps mmaps; do [ -d "${src}/${d}" ] && have+=("${d}"); done
+  [ "${#have[@]}" -gt 0 ] || die "${src} has none of dbc/ maps/ vmaps/ mmaps/"
+  echo "importing: ${have[*]}"
   local vol; vol="$(basename "${ROOT}")_gamedata"
   docker volume create "${vol}" >/dev/null
-  echo "copying into volume ${vol}..."
-  tar -C "${src}" -cf - dbc maps vmaps $( [ -d "${src}/mmaps" ] && echo mmaps ) \
+  tar -C "${src}" -cf - "${have[@]}" \
     | docker run --rm -i -v "${vol}:/data" debian:bookworm-slim \
-        bash -c 'tar -C /data -xf - && date -u +%FT%TZ > /data/.extracted && chown -R 10001:10001 /data && du -sh /data'
+        bash -c 'tar -C /data -xf - && date -u +%FT%TZ > /data/.extracted && chown -R 10001:10001 /data && du -sh /data/* | sed "s/^/  /"'
 }
 
 cmd_backup() { need_env; mkdir -p backups; dc --profile backup run --rm backup; }
