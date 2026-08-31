@@ -67,7 +67,9 @@ services:
       - mangoslogs:/logs
     # anticheat.conf has no CLI flag: mangosd loads ../etc/anticheat.conf relative
     # to its cwd, which the image symlinks to /config/anticheat.conf.
-    command: ["mangosd", "-c", "/config/mangosd.conf", "-a", "/config/ahbot.conf", "-p", "/config/aiplayerbot.conf"]
+    # The start guard aligns mmap.enabled with whether /data/mmaps exists — this core
+    # hard-asserts on startup otherwise.
+    command: ["/opt/realm/mangosd-start.sh"]
     # mangosd saves every character on SIGTERM; never cut that short.
     stop_grace_period: 5m
     # Hard cap for the world server. ~2 GB with bots off; each random bot adds ~20 MB.

@@ -57,6 +57,9 @@ If extraction stops with a locale error, your client stores archives in `Data/en
 and the extractor wants them there; merged single-folder clients also work. See
 `docker/extract.sh`.
 
+Without movement maps the server still runs — a start guard sets `mmap.enabled = 0` and NPCs
+path crudely; add mmaps later and the same guard re-enables pathfinding on the next restart.
+
 ## 5. First boot
 
 ```bash
@@ -68,8 +71,11 @@ DB users; seeds `/config/*.conf`) → `realmd`, `mangosd`, `realm`, `caddy`. `ma
 loads the world (2–5 min); `./realmctl logs mangosd` shows progress, `./realmctl status`
 shows health.
 
-`realmctl up` prints the **setup token** (also `docker compose exec realm cat
-/state/setup-token`). Open `https://<REALM_DOMAIN>/setup`, paste it, choose the realm name,
+`realmctl up` prints the **setup token**. Wait for `mangosd: healthy` in `./realmctl status`
+before finishing the wizard — its last step talks to the world server, which needs a few
+minutes to load the world on first boot (the wizard says so if you are early).
+
+(Also `docker compose exec realm cat /state/setup-token`.) Open `https://<REALM_DOMAIN>/setup`, paste it, choose the realm name,
 and create your admin login. The wizard logs into the game server's SOAP interface with the
 database's seeded `ADMINISTRATOR` account, gives it a fresh random password, and stores it
 encrypted under `/state`. The token file is deleted afterwards.

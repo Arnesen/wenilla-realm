@@ -68,7 +68,7 @@ COPY --from=build /opt/mangos /opt/mangos
 COPY --from=build /opt/src/classic-db /opt/src/classic-db
 COPY --from=build /opt/core/sql /opt/src/mangos-classic/sql
 COPY --from=build /opt/core/contrib /opt/src/mangos-classic/contrib
-COPY docker/db-init.sh docker/conf-defaults.sh docker/extract.sh /opt/realm/
+COPY docker/db-init.sh docker/conf-defaults.sh docker/extract.sh docker/mangosd-start.sh /opt/realm/
 RUN chmod 0755 /opt/realm/*.sh \
     # mangosd resolves anticheat.conf as ../etc/anticheat.conf from its cwd (no CLI flag).
     && ln -sf /config/anticheat.conf /opt/mangos/etc/anticheat.conf \
