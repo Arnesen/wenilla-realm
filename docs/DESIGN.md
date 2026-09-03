@@ -73,5 +73,6 @@ restart), announcements, and the online list (`realmweb` SELECTs).
   problems; the service stays a plain HTTP app.
 - **SOAP over the Docker socket**: every admin action the panel needs is a GM command;
   container-level control is optional (EXTENSIONS.md).
-- **Prebuilt images**: both builds take 20–30 min and 10+ GB; CI does them, the VM pulls.
+- **Prebuilt images**: both builds take 20–30 min and 10+ GB; CI does them, the VM pulls
+  ([RELEASE.md](RELEASE.md): the pipeline, the pin, updates, rollbacks).
 - **Pinned upstreams, no patches**: reproducible source offer, simple to bump.
