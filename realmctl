@@ -26,7 +26,9 @@ usage: realmctl <command>
   backup             dump DBs + service state to backups/ (keeps 14)
   restore FILE       restore a backups/realm-*.tar.gz (stops the game services first)
   reset-admin        reset the web admin credentials
-  update             pull newer images and restart
+  update [svc...]    pull newer images and recreate what changed (all services, or only the named ones:
+                     'update realm' ships a client change without touching the world server)
+  version            what is running (image revisions from the labels) against upstreams.env
   install-cron       install a nightly backup crontab line
 USAGE
 }
@@ -275,6 +277,49 @@ cmd_restore() {
   dc up -d
 }
 
+# update — pull, then `up -d`, which recreates only the containers whose image or config changed.
+# With service names the recreate is limited to them (`--no-deps`), so a client-only change can be
+# shipped without the world server noticing. Recreating `realm` drops every WebSocket relay
+# (players reload the page); recreating `mangosd` is a world reload (2–5 min, after the save).
+cmd_update() {
+  need_env
+  if [ $# -gt 0 ]; then
+    dc pull "$@"
+    dc up -d --no-deps "$@"
+  else
+    dc pull
+    dc up -d
+  fi
+  cmd_status
+}
+
+# version — the OCI labels the Dockerfiles set (the source offer) on the running containers,
+# next to what upstreams.env pins, so "is the VM on the commit I think?" is one command.
+cmd_version() {
+  local svc cid img rev src
+  echo "pinned (upstreams.env):"
+  echo "  wenilla         ${WENILLA_COMMIT:-?}"
+  echo "  mangos-classic  ${MANGOS_CLASSIC_COMMIT:-?}"
+  echo "  classic-db      ${CLASSIC_DB_COMMIT:-?}"
+  echo "running:"
+  for svc in realm mangosd; do
+    cid="$(dc ps -q "${svc}" 2>/dev/null || true)"
+    if [ -z "${cid}" ]; then echo "  ${svc}: not running"; continue; fi
+    img="$(docker inspect -f '{{.Config.Image}}' "${cid}")"
+    src="$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.source"}}' "${cid}")"
+    rev="$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${cid}")"
+    echo "  ${svc}: ${img}"
+    echo "    built from ${src:-?} @ ${rev:-?}"
+    if [ "${svc}" = mangosd ]; then
+      echo "    classic-db @ $(docker inspect -f '{{index .Config.Labels "dev.wenilla.classic-db.revision"}}' "${cid}")"
+    fi
+  done
+  # Older images (before images.yml stopped overriding the labels) carry this repository's
+  # commit in .revision instead; say so rather than let it read as a wenilla commit.
+  echo "(a revision that is a commit of this repository means an image from before docs/RELEASE.md;"
+  echo " its wenilla pin is 'git show <rev>:upstreams.env')"
+}
+
 cmd_install_cron() {
   local line="17 4 * * * ${ROOT}/realmctl backup >> ${ROOT}/backups/cron.log 2>&1"
   echo "${line}"
@@ -294,7 +339,8 @@ case "${1:-}" in
   backup)          cmd_backup ;;
   restore)         shift; cmd_restore "$@" ;;
   reset-admin)     dc exec realm /app/wenilla-realm reset-admin ;;
-  update)          need_env; dc pull; dc up -d; cmd_status ;;
+  update)          shift; cmd_update "$@" ;;
+  version)         cmd_version ;;
   install-cron)    shift; cmd_install_cron "$@" ;;
   ""|-h|--help|help) usage ;;
   *)               usage; exit 1 ;;
