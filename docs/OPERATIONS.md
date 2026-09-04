@@ -9,7 +9,9 @@
 | backup now | `./realmctl backup` → `backups/realm-<UTC>.tar.gz` (keeps 14) |
 | nightly backups | `./realmctl install-cron` (04:17 local) |
 | restore | `./realmctl restore backups/realm-<stamp>.tar.gz` (stops game services, restores, restarts) |
-| update images | `./realmctl update` (pull + `up -d`; `mangosd` restarts → players disconnect) |
+| update | `./realmctl update [service…]` (pull + `up -d`; recreates only what changed — `update realm` leaves the world server alone). Recreating `realm` drops every relay: players reload. See [RELEASE.md](RELEASE.md). |
+| what is running | `./realmctl version` (image revisions vs `upstreams.env`) |
+| roll back | `REALM_TAG=sha-<7>` in `.env`, then `./realmctl update realm` ([RELEASE.md](RELEASE.md)) |
 | lost admin login | `./realmctl reset-admin` |
 
 Backups contain the realm (accounts) and character databases, the service's
@@ -34,7 +36,7 @@ storage box) — a VM-local backup is not a backup.
 
 ## Sizing and limits
 
-`mem_limit: 5g` on `mangosd` (a fresh world with 50 bots is ~1.5 GB). Bots: 35 MB and a
+`mem_limit` on `mangosd` is `MANGOSD_MEM` in `.env` (default 3g; a fresh world with 50 bots is ~1.5 GB). Bots: 35 MB and a
 slice of one core each; 50 is the default, 200 fits on 4 vCPU. Bump
 `AiPlayerbot.MinRandomBots`/`MaxRandomBots` from the panel (restart). MariaDB defaults are
 fine up to a few hundred characters.

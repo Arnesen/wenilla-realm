@@ -38,6 +38,7 @@ creates every account; players need a WebGPU-capable browser (Chrome/Edge — Li
 `chrome://flags/#enable-unsafe-webgpu`) and nothing else.
 
 Full walkthrough: [SETUP.md](docs/SETUP.md). Day two: [OPERATIONS.md](docs/OPERATIONS.md).
+How a change reaches the realm, updates and rollbacks: [RELEASE.md](docs/RELEASE.md).
 
 ## What is inside
 
@@ -51,11 +52,13 @@ Full walkthrough: [SETUP.md](docs/SETUP.md). Day two: [OPERATIONS.md](docs/OPERA
 
 **Source offer (GPLv2 §3 / GPLv3 §6).** The published images build the upstream projects
 *unpatched* at the commits pinned in [`upstreams.env`](upstreams.env). Every image carries
-`org.opencontainers.image.source` and `org.opencontainers.image.revision` labels (plus
-`dev.wenilla.classic-db.revision`); the exact sources are at those revisions in the upstream
-repositories, and the Dockerfiles in `docker/` are the complete build recipe.
+`org.opencontainers.image.source` and `org.opencontainers.image.revision` labels naming the
+project and commit it was built from (plus `dev.wenilla.classic-db.revision`); the exact sources
+are at those revisions in the upstream repositories, and the Dockerfiles in `docker/` are the
+complete build recipe. `./realmctl version` prints those labels for the running containers.
 
 ## Docs
 
-[SETUP](docs/SETUP.md) · [OPERATIONS](docs/OPERATIONS.md) · [SECURITY](docs/SECURITY.md) · [PRIVACY](docs/PRIVACY.md)
-· [LEGAL](docs/LEGAL.md) · [EXTENSIONS](docs/EXTENSIONS.md) · [DESIGN](docs/DESIGN.md)
+[SETUP](docs/SETUP.md) · [OPERATIONS](docs/OPERATIONS.md) · [RELEASE](docs/RELEASE.md) · [SECURITY](docs/SECURITY.md)
+· [PRIVACY](docs/PRIVACY.md) · [LEGAL](docs/LEGAL.md) · [EXTENSIONS](docs/EXTENSIONS.md) · [DESIGN](docs/DESIGN.md)
+· [AGENTS](AGENTS.md) (the map, for people and agents)

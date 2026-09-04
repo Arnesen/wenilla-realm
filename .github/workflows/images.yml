@@ -1,3 +1,12 @@
+# Builds and pushes the two images on every push to main (and on v* tags). The realm image is
+# rebuilt every time — its input is the wenilla pin, which is what usually changed. The game
+# server image is rebuilt only when something that goes into it changed; otherwise this
+# commit's sha- tag is pointed at the current latest, so the image id does not move and
+# `realmctl update` leaves mangosd running. docs/RELEASE.md describes the whole path.
+#
+# The Dockerfiles set org.opencontainers.image.source/.revision to the project and commit they
+# build (the README's source offer). metadata-action's own labels would override them with this
+# repository's coordinates, so only its *tags* are used here.
 name: images
 on:
   push:
@@ -16,8 +25,38 @@ jobs:
           if find . -path ./.git -prune -o \( -iname '*.mpq' -o -iname '*.dbc' \) -print | grep .; then
             echo "game data files found in the repository; refusing to build" >&2; exit 1
           fi
-  mangos:
+
+  # Did anything that goes into the mangos image change since the previous push? Its
+  # Dockerfile, the four scripts it COPYs, and its three pins. A tag or a first push builds.
+  mangos-inputs:
     needs: guard
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          inputs='docker/mangos.Dockerfile docker/db-init.sh docker/conf-defaults.sh docker/extract.sh docker/mangosd-start.sh'
+          pins() { git show "$1:upstreams.env" | grep -E '^(MANGOS_CLASSIC|CLASSIC_DB|PLAYERBOTS)_COMMIT=' || true; }
+          if [ "${GITHUB_REF_TYPE}" = tag ] || [ -z "${BEFORE}" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            changed=true; why="tag, first push, or no previous commit to compare with"
+          elif ! git diff --quiet "${BEFORE}" HEAD -- ${inputs} || [ "$(pins "${BEFORE}")" != "$(pins HEAD)" ]; then
+            changed=true; why="its inputs changed since ${BEFORE:0:7}"
+          else
+            changed=false; why="nothing that goes into it changed since ${BEFORE:0:7}; the sha- tag will point at latest"
+          fi
+          echo "mangos image: changed=${changed} (${why})"
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+
+  mangos:
+    needs: [guard, mangos-inputs]
+    if: needs.mangos-inputs.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,13 +79,30 @@ jobs:
           file: docker/mangos.Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             MANGOS_CLASSIC_COMMIT=${{ env.MANGOS_CLASSIC_COMMIT }}
             CLASSIC_DB_COMMIT=${{ env.CLASSIC_DB_COMMIT }}
             PLAYERBOTS_COMMIT=${{ env.PLAYERBOTS_COMMIT }}
           cache-from: type=gha,scope=mangos
           cache-to: type=gha,scope=mangos,mode=max
+
+  # Nothing in the mangos image changed: give this commit its sha- tag anyway (smoke and
+  # `.env` pin by it), pointing at the manifest latest already points at. No new image id.
+  mangos-retag:
+    needs: [guard, mangos-inputs]
+    if: needs.mangos-inputs.outputs.changed == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - name: point sha-${{ github.sha }} at latest
+        run: |
+          set -euo pipefail
+          img="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/wenilla-realm-mangos"
+          docker buildx imagetools create --tag "${img}:sha-${GITHUB_SHA::7}" "${img}:latest"
+          docker buildx imagetools inspect "${img}:sha-${GITHUB_SHA::7}" | head -5
+
   realm:
     needs: guard
     runs-on: ubuntu-latest
@@ -71,7 +127,6 @@ jobs:
           file: docker/realm.Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             WENILLA_REPO=${{ env.WENILLA_REPO }}
             WENILLA_COMMIT=${{ env.WENILLA_COMMIT }}
