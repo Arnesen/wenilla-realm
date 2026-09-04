@@ -101,7 +101,9 @@ jobs:
           set -euo pipefail
           img="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/wenilla-realm-mangos"
           docker buildx imagetools create --tag "${img}:sha-${GITHUB_SHA::7}" "${img}:latest"
-          docker buildx imagetools inspect "${img}:sha-${GITHUB_SHA::7}" | head -5
+          # No `| head`: under pipefail, head closing the pipe early made inspect exit 255
+          # and failed a retag that had already succeeded. The output is a few lines anyway.
+          docker buildx imagetools inspect "${img}:sha-${GITHUB_SHA::7}"
 
   realm:
     needs: guard
