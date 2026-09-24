@@ -14,7 +14,17 @@ relay) behind a session cookie: no login, no bytes. The play page is rendered pe
 
 ## Controls
 
-- **Closed registration.** Accounts exist only if the operator makes them.
+- **Closed registration.** Accounts exist only if the operator makes them — directly, or as a
+  dungeon-preset group.
+- **Dungeon-preset links are bearer credentials.** `/g/<token>` (256 random bits, stored
+  hashed) opens its group's role cards without a login: anyone holding it can play those
+  characters, summon them, or delete the group. It reaches nothing else — joining mints an
+  ordinary player session for that one slot. The page is sent `no-store`, `no-referrer` and
+  `noindex`, lookups are rate-limited per IP, and deleting the group kills the link and every
+  session it made. Share it like a password; delete the group when the run is over.
+- **Preset builds hold GM briefly.** While a preset character is built the service raises its
+  fresh account to GM level 3 (the character types its own `.levelup`/`.additem`), and drops it
+  back to 0 when the build ends, success or not. Nobody else has that account's password.
 - **SOAP is internal** and used by the service with a per-install random password for the
   `ADMINISTRATOR` account, set during `/setup` and stored encrypted with `/state/master.key`.
   The seeded `GAMEMASTER`/`MODERATOR`/`PLAYER` accounts keep their published passwords but

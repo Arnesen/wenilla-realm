@@ -19,6 +19,26 @@ Backups contain the realm (accounts) and character databases, the service's
 image by `db-init` on an empty database. Copy `backups/` off the VM (e.g. `rsync` or a
 storage box) — a VM-local backup is not a backup.
 
+## Dungeon presets
+
+**Panel → Presets** makes a ready-to-play group: *The Deadmines* (five level-20 Alliance heroes
+at the mine in Moonbrook) or *Blackrock Depths* (five level-56 heroes at the gates inside
+Blackrock Mountain) — tank, healer and three damage dealers, geared, talents spent, standing at
+the entrance. The service builds them itself in about half a minute; the group's row shows
+*building*, then *ready*, and its secret link.
+
+Send the link to the group. Each friend opens it, clicks a card ("Warrior · Tank") and is in the
+game as that character — no account, no password, no character screen. The same page is the
+run's tool: who is in game, **Summon everyone to the entrance** (works online or offline), and
+**Delete group**, which removes every account and character of the group (players online are
+kicked first). Anyone with the link can use all three, so share it like a password and delete
+the group when you are done; the panel lists and deletes groups too.
+
+A card marked *failed* shows why (usually the world server was restarting). Preset users do not
+appear under Users. The presets need a running world with the classic-db content (the
+characters are built in it); the characters are ordinary characters, saved and backed up like
+any other until the group is deleted.
+
 ## Restart semantics
 
 - **Panel "Restart world"**: the service asks `mangosd` to shut down cleanly; it saves every

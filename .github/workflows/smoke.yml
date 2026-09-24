@@ -50,6 +50,9 @@ jobs:
           # served); after setup they answer 401 without a session — covered by tests/app.rs
           test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/data/__index)" = "303 https://localhost/setup"
           test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/wenilla.js)" = "303 https://localhost/setup"
+          # the dungeon-preset link page is behind the same gate (after setup: 404 for an unknown
+          # token, covered by tests/app.rs in wenilla)
+          test "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' https://localhost/g/nosuchgroup)" = "303 https://localhost/setup"
           # a wrong token is refused
           curl -sk https://localhost/setup -d token=wrong -d admin_username=ci -d admin_password=cipassword123 -d admin_password2=cipassword123 -d realm_name=CI | grep -q 'wrong setup token'
       # The wizard's final step talks to mangosd's console (bootstrapping WRSOAP), and mangosd
