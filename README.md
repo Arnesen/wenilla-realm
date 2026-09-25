@@ -32,8 +32,9 @@ data and downloads none: you supply the `Data/` folder of your own 1.12.1 client
 5. **Start**: `./realmctl up`. It pulls the prebuilt images from `ghcr.io/arnesen/…` and
    prints a one-time setup token; open `https://<your-domain>/setup`, paste it, name the
    realm, create your admin login, then invite players from the panel (Users → Invite a friend) —
-   or make a dungeon group (Presets → *The Deadmines* / *Blackrock Depths*): five geared
-   characters at the entrance and one secret link your friends click to play them.
+   or make a dungeon group (Presets → *The Deadmines* … *Upper Blackrock Spire*, or a 40-strong
+   *Molten Core* raid): geared characters at the entrance and one secret link your friends click
+   to play them.
 
 Everything is on one machine and there is exactly one game world per install. The operator
 creates every account; players need a WebGPU-capable browser (Chrome/Edge — Linux Chrome behind
