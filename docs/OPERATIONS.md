@@ -21,11 +21,25 @@ storage box) — a VM-local backup is not a backup.
 
 ## Dungeon presets
 
-**Panel → Presets** makes a ready-to-play group: *The Deadmines* (five level-20 Alliance heroes
-at the mine in Moonbrook) or *Blackrock Depths* (five level-56 heroes at the gates inside
-Blackrock Mountain) — tank, healer and three damage dealers, geared, talents spent, standing at
-the entrance. The service builds them itself in about half a minute; the group's row shows
-*building*, then *ready*, and its secret link.
+**Panel → Presets** makes a ready-to-play group of Alliance heroes — geared, talents spent,
+standing at the entrance:
+
+| preset | heroes | level | where they stand |
+|---|---|---|---|
+| The Deadmines | 5 | 20 | the mine in Moonbrook, Westfall |
+| The Scarlet Monastery | 5 | 38 | the Monastery gates, Tirisfal Glades |
+| The Sunken Temple | 5 | 52 | the stairs down to the portal, Swamp of Sorrows |
+| Blackrock Depths | 5 | 56 | the gates inside Blackrock Mountain |
+| Stratholme | 5 | 58 | the city gates, Eastern Plaguelands |
+| Upper Blackrock Spire | 10 | 60 | the top of Blackrock Spire; the tank carries the Seal of Ascension |
+| Molten Core | 40 | 60 | the Molten Span; everyone attuned — jump through the window |
+
+A party is tank, healer and three damage dealers; UBRS adds a second warrior and two more healers;
+Molten Core is a full raid (4 tanks, 13 healers, 23 damage). The level-60 groups wear pre-raid
+gear (dungeon sets and epics). The service builds the characters itself, eight at a time across
+the realm — about half a minute for a party, some six minutes for the raid — then logs in once as
+each character's player to check that its level, talents and gear came through; the group's row
+shows *building*, then *ready*, and its secret link.
 
 Send the link to the group. Each friend opens it, clicks a card ("Warrior · Tank") and is in the
 game as that character — no account, no password, no character screen. The same page is the
@@ -34,7 +48,8 @@ run's tool: who is in game, **Summon everyone to the entrance** (works online or
 kicked first). Anyone with the link can use all three, so share it like a password and delete
 the group when you are done; the panel lists and deletes groups too.
 
-A card marked *failed* shows why (usually the world server was restarting). Preset users do not
+A card marked *failed* shows why (usually the world server was restarting); a note on a *ready*
+card names gear the server would not let the character wear. Preset users do not
 appear under Users. The presets need a running world with the classic-db content (the
 characters are built in it); the characters are ordinary characters, saved and backed up like
 any other until the group is deleted.
