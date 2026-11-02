@@ -69,9 +69,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/wenilla-realm-mangos
+          # No `latest` here: the last step moves it, once the build is pushed.
           tags: |
             type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
       - uses: docker/build-push-action@v6
         with:
@@ -85,6 +85,21 @@ jobs:
             PLAYERBOTS_COMMIT=${{ env.PLAYERBOTS_COMMIT }}
           cache-from: type=gha,scope=mangos
           cache-to: type=gha,scope=mangos,mode=max
+      # `latest` moves last, and only to main's head: two pins landing together build side by
+      # side, and the slower, older build used to overwrite the newer one's `latest` when it
+      # finished second (wenilla #48's and #49's pins put #48's build over #49's fix). An older build keeps
+      # its sha- tag; the newer one's own run moves `latest`.
+      - name: point latest at this build if it is still main's head
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          img="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/wenilla-realm-mangos"
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "${head}" != "${GITHUB_SHA}" ]; then
+            echo "main has moved on to ${head:0:7}; latest stays with the newer build"
+            exit 0
+          fi
+          docker buildx imagetools create --tag "${img}:latest" "${img}:sha-${GITHUB_SHA::7}"
 
   # Nothing in the mangos image changed: give this commit its sha- tag anyway (smoke and
   # `.env` pin by it), pointing at the manifest latest already points at. No new image id.
@@ -119,9 +134,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/wenilla-realm
+          # No `latest` here: the last step moves it, once the build is pushed.
           tags: |
             type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
       - uses: docker/build-push-action@v6
         with:
@@ -134,3 +149,18 @@ jobs:
             WENILLA_COMMIT=${{ env.WENILLA_COMMIT }}
           cache-from: type=gha,scope=realm
           cache-to: type=gha,scope=realm,mode=max
+      # `latest` moves last, and only to main's head: two pins landing together build side by
+      # side, and the slower, older build used to overwrite the newer one's `latest` when it
+      # finished second (wenilla #48's and #49's pins put #48's build over #49's fix). An older build keeps
+      # its sha- tag; the newer one's own run moves `latest`.
+      - name: point latest at this build if it is still main's head
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          img="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/wenilla-realm"
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "${head}" != "${GITHUB_SHA}" ]; then
+            echo "main has moved on to ${head:0:7}; latest stays with the newer build"
+            exit 0
+          fi
+          docker buildx imagetools create --tag "${img}:latest" "${img}:sha-${GITHUB_SHA::7}"
